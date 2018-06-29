@@ -12,9 +12,10 @@ $ pip3 install requests pyyaml
 ### Usage
 
 ```
-usage: python3 lovelace-migrate.py [--help] [-h HOST] [-p PORT]
-    [--endpoint ENDPOINT] [--ssl] [-P [PASSWORD]] [-n NAME] [--api-url API_URL]
-    [--debug] [--debug-states]
+usage:
+    python3 lovelace_migrate.py [--help] [-h HOST] [-p PORT]
+        [--endpoint ENDPOINT] [--ssl] [-P [PASSWORD]] [-n NAME]
+        [--api-url API_URL] [--debug] [--debug-states]
 ```
 
 ### Arguments
