@@ -20,11 +20,11 @@ usage:
 
 #### Quick reference table
 
-|Short|Long        |Default|Description                                 |
-|-----|------------|-------|--------------------------------------------|
-|`-h` |`--help`    |       |show this help message and exit             |
-|`-n` |`--name`    |`None` |name to give the Lovelace UI (default: auto)|
-|`-p` |`--password`|       |Home Assistant API password                 |
+|Short|Long        |Default|Description                    |
+|-----|------------|-------|-------------------------------|
+|`-h` |`--help`    |       |show this help message and exit|
+|`-n` |`--name`    |`auto` |name to give the Lovelace UI   |
+|`-p` |`--password`|       |Home Assistant API password    |
 
 #### `-h`, `--help`
 show this help message and exit
