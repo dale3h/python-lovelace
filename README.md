@@ -13,54 +13,24 @@ $ pip3 install requests pyyaml
 
 ```
 usage:
-    python3 lovelace_migrate.py [--help] [-h HOST] [-p PORT]
-        [--endpoint ENDPOINT] [--ssl] [-P [PASSWORD]] [-n NAME]
-        [--api-url API_URL] [--debug] [--debug-states]
+    python3 lovelace_migrate.py [-h] [-n <name>] [-p [<password>]] [<api-url|file>]
 ```
 
 ### Arguments
 
 #### Quick reference table
 
-|Short|Long            |Default    |Description                                           |
-|-----|----------------|-----------|------------------------------------------------------|
-|     |`--help`        |           |show this help message and exit                       |
-|`-h` |`--host`        |`localhost`|host of the Home Assistant server (default: localhost)|
-|`-p` |`--port`        |`8123`     |port to connect to (default: 8123)                    |
-|     |`--endpoint`    |`/api`     |REST API endpoint (default: /api)                     |
-|     |`--ssl`         |`http`     |enable to use HTTPS                                   |
-|`-P` |`--password`    |           |Home Assistant API password                           |
-|`-n` |`--name`        |`None`     |name to give the Lovelace UI                          |
-|     |`--api-url`     |`None`     |Home Assistant API URL (overrides above settings)     |
-|     |`--debug`       |           |enable debugging                                      |
-|     |`--debug-states`|           |output raw states JSON                                |
+|Short|Long        |Default|Description                                 |
+|-----|------------|-------|--------------------------------------------|
+|`-h` |`--help`    |       |show this help message and exit             |
+|`-n` |`--name`    |`None` |name to give the Lovelace UI (default: auto)|
+|`-p` |`--password`|       |Home Assistant API password                 |
 
-#### `--help`
+#### `-h`, `--help`
 show this help message and exit
 
-#### `-h`, `--host` (Default: localhost)
-host of the Home Assistant server (default: localhost)
-
-#### `-p`, `--port` (Default: 8123)
-port to connect to (default: 8123)
-
-#### `--endpoint` (Default: /api)
-REST API endpoint (default: /api)
-
-#### `--ssl` (Default: http)
-enable to use HTTPS
-
-#### `-P`, `--password`
-Home Assistant API password
-
-#### `-n`, `--name` (Default: None)
+#### `-n`, `--name` (Default: auto)
 name to give the Lovelace UI
 
-#### `--api-url` (Default: None)
-Home Assistant API URL (overrides above settings)
-
-#### `--debug`
-enable debugging
-
-#### `--debug-states`
-output raw states JSON
+#### `-p`, `--password`
+Home Assistant API password

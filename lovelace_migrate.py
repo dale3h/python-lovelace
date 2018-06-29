@@ -17,55 +17,27 @@ _LOGGER = logging.getLogger(__name__)
 
 # Build arguments parser (argdown needs this at the beginning of the file)
 parser = argparse.ArgumentParser(
-    description="Home Assistant Lovelace migration tool",
-    add_help=False)
+    description="Home Assistant Lovelace migration tool")
+
+# Positional arguments
 parser.add_argument(
-    '--help', action='help',
-    help="show this help message and exit")
+    'input', metavar='<api-url|file>', nargs='?', default='-',
+    help="Home Assistant REST API URL or states JSON file")
+
+# Optional arguments
 parser.add_argument(
-    '-h', '--host', default='localhost',
-    help="host of the Home Assistant server (default: localhost)")
+    '-n', '--name', metavar='<name>',
+    help="name to give the Lovelace UI (default: auto)")
+# parser.add_argument(
+#     '-o', '--output', metavar='<file>',
+#     help="write output to <file> instead of stdout")
 parser.add_argument(
-    '-p', '--port', default=8123,
-    help="port to connect to (default: 8123)")
-parser.add_argument(
-    '--endpoint', default='/api',
-    help="REST API endpoint (default: /api)")
-parser.add_argument(
-    '--ssl', dest='scheme', action='store_const',
-    const='https', default='http',
-    help="enable to use HTTPS")
-parser.add_argument(
-    '-P', '--password', nargs='?', default=False, const=None,
+    '-p', '--password', metavar='<password>', nargs='?',
+    default=False, const=None,
     help="Home Assistant API password")
-parser.add_argument(
-    '-n', '--name',
-    help="name to give the Lovelace UI")
-parser.add_argument(
-    '--api-url',
-    help="Home Assistant API URL (overrides above settings)")
-parser.add_argument(
-    '--debug', action='store_const', const=True, default=False,
-    help="enable debugging")
-parser.add_argument(
-    '--debug-states', action='store_const', const=True, default=False,
-    help="output raw states JSON")
 
-# Parse the command line arguments
+# Parse the args
 args = parser.parse_args()
-
-
-def dd(*args, exit=True, json=True):
-    """Debug output utility."""
-    if json and len(args) == 1:
-        import json as _json
-        try:
-            args = [_json.dumps(*args, indent=2)]
-        except TypeError:
-            pass
-    print(*args)
-    if exit:
-        sys.exit()
 
 
 class Lovelace(OrderedDict):
@@ -305,7 +277,7 @@ class HomeAssistantAPI(object):
         request = requests.get(url, headers=headers)
 
         if request.status_code == requests.codes.unauthorized:
-            self.password = auth()
+            self.password = self.auth()
             return self.get(endpoint=endpoint, refresh=refresh)
         else:
             request.raise_for_status()
@@ -397,17 +369,14 @@ def main() -> int:
     # Get UI name from args
     ui_name = args.name
 
-    # Check if a file was provided via stdin
-    if not sys.stdin.isatty():
-        # Read states JSON from stdin
+    # Detect input source (file, API URL, or - [stdin])
+    if args.input == '-':
+        # Input is stdin
         states = json.load(sys.stdin)
-    else:
-        # Build api_url if not specified
-        if args.api_url is None:
-            args.api_url = "{scheme}://{host}:{port}{endpoint}".format(**vars(args))
-
-        # Instantiate new Home Assistant API object
-        hass = HomeAssistantAPI(args.api_url, args.password)
+    elif (args.input.lower().startswith('http://') or
+          args.input.lower().startswith('https://')):
+        # Input is API URL
+        hass = HomeAssistantAPI(args.input, args.password)
 
         # Get states from REST API
         states = hass.get_states()
@@ -416,11 +385,11 @@ def main() -> int:
         if ui_name is None:
             config = hass.get_config()
             ui_name = config.get('location_name')
-
-    # Output states for debugging
-    if args.debug_states:
-        print(json.dumps(states, indent=2))
-        return 0
+    else:
+        # Input is file
+        # @todo Detect if file exists and error if not.
+        print("Loading files is not yet implemented. Please use stdin.")
+        return 1
 
     # Build a list of entities from the states
     entities = get_entities(states)
@@ -441,8 +410,7 @@ def main() -> int:
           default_flow_style=False)
 
     # Output Lovelace YAML to stdout
-    if not args.debug:
-        print(dump.strip())
+    print(dump.strip())
 
     # Return with a normal exit code
     return 0
