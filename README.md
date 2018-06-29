@@ -1,14 +1,20 @@
 # python-lovelace
 Lovelace UI module and migration tool for Python
 
+## Requirements
+
+```shell
+$ pip3 install requests pyyaml
+```
+
 ## Arguments and Usage
 
 ### Usage
 
 ```
-usage: argdown [--help] [-h HOST] [-p PORT] [--endpoint ENDPOINT] [--ssl]
-               [-P [PASSWORD]] [-n NAME] [--api-url API_URL] [--debug]
-               [--debug-states]
+usage: python3 lovelace-migrate.py [--help] [-h HOST] [-p PORT]
+    [--endpoint ENDPOINT] [--ssl] [-P [PASSWORD]] [-n NAME] [--api-url API_URL]
+    [--debug] [--debug-states]
 ```
 
 ### Arguments
