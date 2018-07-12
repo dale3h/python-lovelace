@@ -2,8 +2,17 @@
 Lovelace UI module and migration tool for Python
 
 ## Requirements
+- PyYAML
+- requests
+
+After you clone this repository, you can run:
 ```shell
-$ pip3 install requests pyyaml
+$ pip3 install -r requirements.txt
+```
+
+To install without the `requirements.txt` file:
+```shell
+$ pip3 install "requests>=2.14.2" "pyyaml>=3.11,<4"
 ```
 
 ### Usage
