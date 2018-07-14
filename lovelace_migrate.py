@@ -1,6 +1,9 @@
 """
 Migration tool for Home Assistant Lovelace UI.
 """
+# @todo Finish adding sorting to everywhere else (and remove existing "sort" code)
+# @todo Add sorting to Lovelace.View
+
 import argparse
 import logging
 import sys
@@ -35,22 +38,386 @@ parser.add_argument(
     '-p', '--password', metavar='<password>', nargs='?',
     default=False, const=None,
     help="Home Assistant API password")
+parser.add_argument(
+    '--debug', action='store_true',
+    help="set log level to DEBUG")
 
 # Parse the args
 args = parser.parse_args()
 
 
-class Lovelace(OrderedDict):
+def dd(msg=None, j=None, *args):
+    if j is None and len(args) == 0:
+        j = msg
+        msg = "{}"
+    if j is not None:
+        _LOGGER.debug(msg.format(json.dumps(j, indent=2)))
+    else:
+        _LOGGER.debug(msg.format(*args))
+
+
+class LovelaceBase(OrderedDict):
+    """
+    Base class for Lovelace objects.
+
+    Derivitives should set `key_order`:
+
+    self.key_order = ['first', 'second', '...', 'last']
+    """
+
+    def __init__(self, **kwargs):
+        """Initialize the object."""
+        self.update(kwargs)
+
+        for key, value in self.items():
+            if value is None:
+                del self[key]
+
+    @classmethod
+    def from_config(cls, config):
+        """
+        Subclass should implement config conversion methods `from_xxx_config`:
+
+        from_camera_config(cls, config)
+        from_media_player_config(cls, config)
+        from_group_config(cls, config)
+        """
+        try:
+            domain = config['entity_id'].split('.', 1)[0]
+            fx = getattr(cls, "from_" + domain + "_config", None)
+            if fx is None:
+                _LOGGER.error("Class '{}' does not support conversion from "
+                              "'{}' config".format(cls.__name__, domain))
+                return None
+            return fx(config)
+        except (KeyError, TypeError):
+            _LOGGER.error("Invalid config found for conversion to '{}'"
+                          "".format(cls.__name__))
+            if config is not None:
+                output = json.dumps(config, indent=2)
+            else:
+                output = config
+            _LOGGER.debug("Invalid config: {}".format(output))
+            return None
+
+    def add_item(self, key, item):
+        """Add item(s) to the object."""
+        if type(item) is list:
+            for i in item:
+                if hasattr(i, "sortkeys"):
+                    i.sortkeys()
+            return self[key].extend(item)
+        else:
+            if hasattr(item, "sortkeys"):
+                item.sortkeys()
+            return self[key].append(item)
+
+    def sortkeys(self, key_order=None, delim='...'):
+        """Iterate keys of OrderedDict and move to front/back as necessary."""
+        # Get `keys` from self, but fallback on parent
+        if key_order is None:
+            try:
+                key_order = self.key_order
+            except AttributeError:
+                try:
+                    key_order = super(OrderedDict, self).key_order
+                except AttributeError:
+                    pass
+
+        # Make a copy so that we're not changing the original
+        key_order = key_order[:]
+
+        # Check to see if delimiter is in `key_order`
+        if delim in key_order:
+            mid = key_order.index(delim)
+        else:
+            mid = len(key_order)
+
+        # Reverse the front keys
+        key_order[:mid] = key_order[:mid][::-1]
+
+        # Iterate keys and move them accordingly
+        for i, key in enumerate(key_order):
+            # Skip delimiter and missing keys
+            if i == mid or key not in self:
+                continue
+
+            # Move to front/back
+            self.move_to_end(key, last=i>mid)
+
+
+class Lovelace(LovelaceBase):
     """Lovelace migration class."""
 
-    SIMPLE_CARDS = {
-        'camera': 'camera-preview',
-        'history_graph': 'history-graph',
-        'media_player': 'media-control',
-        'plant': 'plant-status',
-        'weather': 'weather-forecast',
-    }
+    # @todo Refactor AGAIN to move all conversion to this subclass.
+    class Converter(LovelaceBase):
+        pass
 
+
+    # @todo Implement from_config
+    class View(LovelaceBase):
+        """Lovelace UI view representation."""
+
+        def __init__(self, **kwargs):
+            """Init view."""
+            self.key_order = ['title', 'id', 'icon', 'panel', 'theme', '...',
+                              'cards']
+            self.setdefault('cards', [])
+            super().__init__(**kwargs)
+
+        def add_card(self, card):
+            """Add a card to the view."""
+            return self.add_item("cards", card)
+
+
+    # @todo Implement from_config
+    class EntitiesCard(LovelaceBase):
+        """Lovelove UI `entities` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', '...', 'entities']
+            self.setdefault('type', 'entities')
+            self.setdefault('entities', [])
+            super().__init__(**kwargs)
+
+        def add_entity(self, entity):
+            """Add an entity to the card."""
+            return self.add_item("entities", entity)
+
+
+    # @todo Implement from_config
+    class EntityFilterCard(LovelaceBase):
+        """Lovelove UI `entity-filter` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'entities', 'state_filter', 'card',
+                         'show_empty']
+            self.setdefault('type', 'entity-filter')
+            self.setdefault('entities', [])
+            self.setdefault('state_filter', [])
+            super().__init__(**kwargs)
+
+        def add_entity(self, entity):
+            """Add an entity to the card."""
+            return self.add_item("entities", entity)
+
+        def add_state_filter(self, state_filter):
+            """Add a state filter to the card."""
+            return self.add_item("state_filter", state_filter)
+
+
+    # @todo Implement from_config
+    class GlanceCard(LovelaceBase):
+        """Lovelove UI `glance` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', '...', 'entities']
+            self.setdefault('type', 'glance')
+            self.setdefault('entities', [])
+            super().__init__(**kwargs)
+
+        def add_entity(self, entity):
+            """Add an entity to the card."""
+            return self.add_item("entities", entity)
+
+
+    class HistoryGraphCard(LovelaceBase):
+        """Lovelove UI `history-graph` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', 'hours_to_show', 'refresh_interval',
+                         '...', 'entities']
+            self.setdefault('type', 'history-graph')
+            self.setdefault('entities', [])
+            super().__init__(**kwargs)
+
+        def add_entity(self, entity):
+            """Add an entity to the card."""
+            return self.add_item("entities", entity)
+
+        @classmethod
+        def from_history_graph_config(cls, config):
+            """Build the card from config."""
+            return cls(title=friendly_name(config),
+                       hours_to_show=config['attributes'].get('hours_to_show'),
+                       refresh_interval=config['attributes'].get('refresh'),
+                       entities=config['attributes']['entity_id'])
+
+
+    # @todo Implement from_config
+    class HorizontalStackCard(LovelaceBase):
+        """Lovelove UI `horizontal-stack` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', '...', 'cards']
+            self.setdefault('type', 'horizontal-stack')
+            self.setdefault('cards', [])
+            super().__init__(**kwargs)
+
+        def add_card(self, card):
+            """Add a card to the card."""
+            return self.add_item("cards", card)
+
+
+    # @todo Implement from_config
+    class IframeCard(LovelaceBase):
+        """Lovelove UI `iframe` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', 'url', 'aspect_ratio']
+            self.setdefault('type', 'iframe')
+            super().__init__(**kwargs)
+
+
+    # @todo Implement from_config
+    class MapCard(LovelaceBase):
+        """Lovelove UI `map` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', 'aspect_ratio', '...', 'entities']
+            self.setdefault('type', 'map')
+            self.setdefault('entities', [])
+            super().__init__(**kwargs)
+
+        def add_entity(self, entity):
+            """Add an entity to the card."""
+            return self.add_item("entities", entity)
+
+
+    # @todo Implement from_config
+    class MarkdownCard(LovelaceBase):
+        """Lovelove UI `markdown` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', '...', 'content']
+            self.setdefault('type', 'markdown')
+            super().__init__(**kwargs)
+
+
+    class MediaControlCard(LovelaceBase):
+        """Lovelove UI `media-control` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'entity']
+            self.setdefault('type', 'media-control')
+            super().__init__(**kwargs)
+
+        @classmethod
+        def from_media_player_config(cls, config):
+            """Build the card from config."""
+            return cls(entity=config['entity_id'])
+
+
+    # @todo Implement from_config
+    class PictureCard(LovelaceBase):
+        """Lovelove UI `picture` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'image', 'navigation_path', 'service', 'service_data']
+            self.setdefault('type', 'picture')
+            super().__init__(**kwargs)
+
+
+    # @todo Implement from_config
+    class PictureElementsCard(LovelaceBase):
+        """Lovelove UI `picture-elements` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', 'image', 'elements']
+            self.setdefault('type', 'picture-elements')
+            self.setdefault('elements', [])
+            super().__init__(**kwargs)
+
+        def add_element(self, element):
+            """Add an element to the card."""
+            return self.add_item("elements", element)
+
+
+    class PictureEntityCard(LovelaceBase):
+        """Lovelove UI `picture-entity` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'entity', 'name', '...']
+            self.setdefault('type', 'picture-entity')
+            super().__init__(**kwargs)
+
+        @classmethod
+        def from_camera_config(cls, config):
+            """Build the card from config."""
+            return cls(name=friendly_name(config=config),
+                       camera_image=config['entity_id'])
+
+
+    # @todo Implement from_config
+    class PictureGlanceCard(LovelaceBase):
+        """Lovelove UI `picture-glance` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'title', '...', 'entities']
+            self.setdefault('type', 'picture-glance')
+            super().__init__(**kwargs)
+
+
+    class PlantStatusCard(LovelaceBase):
+        """Lovelove UI `plant-status` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'entity']
+            self.setdefault('type', 'plant-status')
+            super().__init__(**kwargs)
+
+        @classmethod
+        def from_plant_config(cls, config):
+            """Build the card from config."""
+            return cls(entity=config['entity_id'])
+
+
+    # @todo Implement from_config
+    class VerticalStackCard(LovelaceBase):
+        """Lovelove UI `vertical-stack` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', '...', 'cards']
+            self.setdefault('type', 'vertical-stack')
+            self.setdefault('cards', [])
+            super().__init__(**kwargs)
+
+        def add_card(self, card):
+            """Add a card to the card."""
+            return self.add_item("cards", card)
+
+
+    class WeatherForecastCard(LovelaceBase):
+        """Lovelove UI `weather-forecast` card representation."""
+
+        def __init__(self, **kwargs):
+            """Init card."""
+            self.key_order = ['type', 'entity']
+            self.setdefault('type', 'weather-forecast')
+            super().__init__(**kwargs)
+
+        @classmethod
+        def from_weather_config(cls, config):
+            """Build the card from config."""
+            return cls(entity=config['entity_id'])
+
+
+    # @todo Refactor this into CARD_CLASSES and `from_config`
     AUTOMATIC_CARDS = {
         'all_lights': 'light',
         'all_automations': 'automation',
@@ -64,181 +431,122 @@ class Lovelace(OrderedDict):
         'all_scripts': 'script',
     }
 
-
-    class View(OrderedDict):
-        """Lovelace UI view representation."""
-
-        def __init__(self, name=None, **kwargs) -> None:
-            """Initialize view."""
-            if name is not None:
-                self['name'] = name
-            if len(kwargs):
-                self.update(kwargs)
-            self['cards'] = []
-
-            if 'tab_icon' in self and self['tab_icon'] is None:
-                del self['tab_icon']
-
-        def add_card(self, card) -> None:
-            """Add card(s) to the Lovelace view."""
-            cards = self['cards']
-            del self['cards']
-            if type(card) is list:
-                cards.extend(card)
-            else:
-                cards.append(card)
-            # Ensure cards is at the end of the OrderedDict.
-            self['cards'] = cards
+    CARD_CLASSES = {
+        'camera': PictureEntityCard,
+        'history_graph': HistoryGraphCard,
+        'media_player': MediaControlCard,
+        'plant': PlantStatusCard,
+        'weather': WeatherForecastCard,
+    }
 
 
-    class Card(OrderedDict):
-        """Lovelace UI card representation."""
+    def __init__(self, groups, title="Home"):
+        """Convert existing Home Assistant config to Lovelace UI."""
+        self.key_order = ['title', 'excluded_entities', '...', 'views']
+        self.setdefault('views', [])
+        super().__init__()
 
-        def __init__(self, type=None, **kwargs):
-            """Initialize automatic card."""
-            if type is not None:
-                self['type'] = type
-            if len(kwargs):
-                self.update(kwargs)
-
-            # @todo Implement automatic sorting when OrderedDict is changed.
-            first_items = ['type', 'name', 'title', 'tab_icon']
-            last_items = ['views', 'cards', 'entities']
-            # @todo Delete any values that are None.
-
-
-    class SimpleCard(Card):
-        """Lovelace UI simple card representation."""
-
-        def __init__(self, entity_id, **kwargs):
-            """Initialize simple card."""
-            domain = entity_id.split('.', 1)[0]
-            kwargs.setdefault('type', Lovelace.SIMPLE_CARDS[domain])
-            kwargs.setdefault('entity', entity_id)
-            super().__init__(**kwargs)
-
-
-    class FilterCard(Card):
-        """Lovelove UI automatic card representation."""
-
-        def __init__(self, object_id=None, **kwargs):
-            """Initialize automatic card."""
-            kwargs.setdefault('type', 'entity-filter')
-            if object_id is not None:
-                kwargs.setdefault(
-                    'card_config', {'title': name_from_id(object_id)})
-                kwargs.setdefault(
-                    'filter', [{'domain': Lovelace.AUTOMATIC_CARDS[object_id]}])
-            super().__init__(**kwargs)
-
-
-    class EntitiesCard(Card):
-        """Lovelove UI entities card representation."""
-
-        def __init__(self, title=None, **kwargs):
-            """Initialize automatic card."""
-            kwargs.setdefault('type', 'entities')
-            if title is not None:
-                kwargs.setdefault('title', title)
-            kwargs.setdefault('entities', [])
-            super().__init__(**kwargs)
-
-        def add_entity(self, entity) -> None:
-            """Add entity(s) to the card."""
-            entities = self['entities']
-            del self['entities']
-            if type(entity) is list:
-                entities.extend(entity)
-            else:
-                entities.append(entity)
-            # Ensure entities is at the end of the OrderedDict
-            self['entities'] = entities
-
-
-    def __init__(self, groups, name="Home"):
-        """Convert existing Home Assistant groups to Lovelace UI."""
         self.groups = groups
-
-        self['name'] = name
-        views = self['views'] = []
+        self['title'] = title
 
         if 'default_view' in self.groups:
-            views.append(self.convert_view(self.groups['default_view'],
-                                           'default_view'))
+            self.add_view(self.convert_view(self.groups['default_view'],
+                                            'default_view'))
 
         for name, conf in self.groups.items():
             if name == 'default_view':
                 continue
             if not conf.get('view', False):
                 continue
-            views.append(self.convert_view(conf, name))
+            self.add_view(self.convert_view(conf, name))
 
-        view = Lovelace.View("All Entities", tab_icon='mdi:settings')
-        view.add_card(Lovelace.FilterCard(
-            card_config={'title': "All Entities"}, filter=[{}]))
+        # view = Lovelace.View(title="All Entities", icon='mdi:settings')
+        # view.add_card(Lovelace.EntityFilterCard(
+        #     card_config={'title': "All Entities"}, filter=[{}]))
+        # self.add_view(view)
 
-        views.append(view)
+        self.sortkeys()
 
-    def convert_card(self, entity_id) -> Card:
+    def add_view(self, view):
+        """Add a view to the UI."""
+        return self.add_item("views", view)
+
+    # @todo Eliminate this method and consolidate conversion.
+    def convert_card(self, entity_id):
         """Helper to convert a card to Lovelace UI."""
+        # if entity_id not in entities:
+        #     _LOGGER.warning("Cannot find config for entity '{}' "
+        #                     "".format(entity_id))
+        #     return None
+
         domain, object_id = entity_id.split('.', 1)
+        config = entities.get(entity_id)
 
         if domain == 'group':
-            if object_id not in self.groups:
-                _LOGGER.warning("Couldn't find group with entity "
-                                "id {}".format(entity_id))
+            if entity_id not in entities:
+                _LOGGER.error("Cannot find config for entity '{}' "
+                                "".format(entity_id))
                 return None
 
-            if object_id in Lovelace.AUTOMATIC_CARDS:
-                return Lovelace.FilterCard(object_id)
+            # if object_id in Lovelace.AUTOMATIC_CARDS:
+            #     return Lovelace.EntityFilterCard(object_id)
 
             return self.convert_group(self.groups[object_id], entity_id)
 
-        if domain in Lovelace.SIMPLE_CARDS:
-            return Lovelace.SimpleCard(entity_id)
+        if domain in self.CARD_CLASSES:
+            cls = self.CARD_CLASSES[domain]
+            return cls.from_config(entities.get(entity_id, {'entity_id': entity_id}))
 
-        _LOGGER.warning("Cannot determine card type for entity id '{}'. "
-                        "Maybe it is unsupported?".format(entity_id))
+        _LOGGER.warning("Domain '{}' is not yet supported. ({})"
+                        "".format(domain, entity_id))
         return None
 
-    def convert_group(self, config, name) -> (Card, list):
+        _LOGGER.warning("Cannot determine card type for entity id '{}' "
+                        "-- may be unsupported".format(entity_id))
+        return None
+
+    # @todo Eliminate this method and consolidate conversion.
+    def convert_group(self, config, name):
         """Helper to convert a group to Lovelace UI."""
         if config.get('view', False):
-            _LOGGER.error("Cannot have view group '{}' inside "
-                          "another group".format(name))
+            _LOGGER.warning("Cannot have view group '{}' within a group "
+                            "".format(name))
             return None
 
-        card = Lovelace.EntitiesCard(config.get('friendly_name', name_from_id(name)))
+        CARD_DOMAINS = ['group'] + list(Lovelace.CARD_CLASSES.keys())
+
+        main_card = Lovelace.EntitiesCard(title=config.get(
+                                          'friendly_name',
+                                          friendly_name(object_id=name)))
         extra_cards = []
+
         for entity_id in config.get('entity_id', []):
             domain, object_id = entity_id.split('.', 1)
-            if domain in ['group', 'media_player', 'camera', 'history_graph',
-                          'media_player', 'plant', 'weather']:
-                _LOGGER.warning(
-                    "Cannot have domain '{}' within a non-view group {}! "
-                    "I will put it into the parent view-type group.".format(
-                    domain, name))
+
+            if domain not in CARD_DOMAINS:
+                main_card.add_entity(entity_id)
+            else:
+                _LOGGER.info(
+                    "Cannot have entity '{}' within non-view group '{}' "
+                    "-- adding as card instead".format(
+                    entity_id, name))
                 extra_card = self.convert_card(entity_id)
                 if extra_card is not None:
                     extra_cards.append(extra_card)
-                continue
-            card.add_entity(entity_id)
-        return card, extra_cards
 
-    def convert_view(self, config, name) -> Card:
+        return [main_card] + extra_cards
+
+    # @todo Eliminate this method and consolidate conversion.
+    def convert_view(self, config, name):
         """Helper to convert a view to Lovelace UI."""
         view = Lovelace.View(
-            config.get('friendly_name', name_from_id(name)),
-            tab_icon=config.get('icon'))
+            title=config.get('friendly_name', friendly_name(object_id=name)),
+            icon=config.get('icon'))
 
         for entity_id in config.get('entity_id', []):
             card = self.convert_card(entity_id)
             if card is None:
                 continue
-            if isinstance(card, tuple):
-                # @todo Fix this to use only one call.
-                view.add_card(card[0])
-                view.add_card(card[1])
             else:
                 view.add_card(card)
 
@@ -285,34 +593,55 @@ class HomeAssistantAPI(object):
         self.cache[endpoint] = request
         return request
 
-    def get_config(self, **kwargs) -> dict:
+    def get_config(self, **kwargs):
         """Get config from Home Assistant REST API."""
         request = self.get('/config', **kwargs)
         return request.json()
 
-    def get_states(self, **kwargs) -> dict:
+    def get_states(self, **kwargs):
         """Get states from Home Assistant REST API."""
         request = self.get('/states', **kwargs)
         return request.json()
 
 
-def get_entities(states) -> dict:
+def get_domains(states):
+    """Build a list of domains/entities from states JSON."""
+    domains = {}
+    for d in states:
+        domain = d['entity_id'].split('.', 1)[0]
+        if domain not in domains:
+            domains[domain] = []
+        domains[domain].append(d)
+    return domains
+
+
+def get_entities(states):
     """Build a list of entities from states JSON."""
     entities = {}
     for e in states:
-        domain = e['entity_id'].split('.', 1)[0]
-        if domain not in entities:
-            entities[domain] = []
-        entities[domain].append(e)
+        entities[e['entity_id']] = e
     return entities
 
 
-def name_from_id(object_id) -> str:
-    """Generate a friendly name from an object_id."""
+def friendly_name(object_id=None, entity_id=None, config=None):
+    """Generate a friendly name from object ID, entity ID, or config."""
+    if type(object_id) is dict:
+        config = object_id
+        object_id = None
+
+    if config is not None:
+        try:
+            return config['attributes']['friendly_name']
+        except KeyError:
+            entity_id = config.get('entity_id')
+
+    if entity_id is not None:
+        object_id = entity_id.split('.', 1)[1]
+
     return object_id.replace('_', ' ').title()
 
 
-def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwargs) -> str:
+def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwargs):
     """YAML dumper for OrderedDict."""
 
     class OrderedDumper(Dumper):
@@ -332,27 +661,26 @@ def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwargs) -> str:
             yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
             data.items())
 
-    OrderedDumper.add_representer(OrderedDict, _dict_representer)
-    OrderedDumper.add_representer(Lovelace, _dict_representer)
-    OrderedDumper.add_representer(Lovelace.View, _dict_representer)
-    OrderedDumper.add_representer(Lovelace.Card, _dict_representer)
-    OrderedDumper.add_representer(Lovelace.SimpleCard, _dict_representer)
-    OrderedDumper.add_representer(Lovelace.FilterCard, _dict_representer)
-    OrderedDumper.add_representer(Lovelace.EntitiesCard, _dict_representer)
-
+    OrderedDumper.add_multi_representer(OrderedDict, _dict_representer)
     return yaml.dump(data, stream, OrderedDumper, **kwargs)
 
 
-def main() -> int:
+def main():
     """Main program function."""
     global args
+    global domains
+    global entities
 
-    logging.basicConfig(level=logging.INFO)
+    if args.debug:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+    logging.basicConfig(level=log_level)
 
     try:
         from colorlog import ColoredFormatter
         logging.getLogger().handlers[0].setFormatter(ColoredFormatter(
-            "%(log_color)s%(levelname)s %(message)s%(reset)s",
+            "%(log_color)s[%(levelname)s] %(message)s%(reset)s",
             datefmt="",
             reset=True,
             log_colors={
@@ -387,11 +715,18 @@ def main() -> int:
             ui_name = config.get('location_name')
     else:
         # Input is file
-        # @todo Detect if file exists and error if not.
-        print("Loading files is not yet implemented. Please use stdin.")
-        return 1
+        try:
+            with open(args.input, 'r') as f:
+                states = json.load(f)
+        except FileNotFoundError:
+            _LOGGER.error("{}: No such file".format(args.input))
+            return 1
+        except PermissionError:
+            _LOGGER.error("{}: Permission denied".format(args.input))
+            return 1
 
-    # Build a list of entities from the states
+    # Build a list of domains/entities from the states
+    domains = get_domains(states)
     entities = get_entities(states)
 
     # Set UI name if we still don't have one
@@ -400,12 +735,12 @@ def main() -> int:
 
     # Build groups dictionary to pass to Lovelace converter
     groups = {}
-    for g in entities['group']:
+    for g in domains['group']:
         object_id = g['entity_id'].split('.', 1)[1]
         groups[object_id] = g.get('attributes')
 
     # Convert to Lovelace UI
-    lovelace = Lovelace(groups, name=ui_name)
+    lovelace = Lovelace(groups, title=ui_name)
     dump = ordered_dump(lovelace, Dumper=yaml.SafeDumper,
           default_flow_style=False)
 
