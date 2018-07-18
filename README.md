@@ -17,7 +17,7 @@ $ pip3 install "requests>=2.14.2" "pyyaml>=3.11,<4"
 
 ### Usage
 ```shell
-$ python3 lovelace_migrate.py [-h] [-n <name>] [-p [<password>]] [<api-url|file>]
+$ python3 lovelace_migrate.py [-h] [-t <title>] [-p [<password>]] [<api-url|file>]
 ```
 
 ### Examples
@@ -61,7 +61,7 @@ detection method.*
 A local JSON file can be used as the configuration input.
 
 ```shell
-$ python3 lovelace_migrate.py -n Home states.json
+$ python3 lovelace_migrate.py -t Home states.json
 ```
 
 ***Note:** Loading from file is currently not implemented. For a temporary
@@ -72,7 +72,7 @@ You can even use the contents of `stdin` as the configuration for the script:
 
 ##### Using `cat`
 ```shell
-$ cat .data/entities.json | python3 lovelace_migrate.py -n Home -
+$ cat .data/entities.json | python3 lovelace_migrate.py -t Home -
 ```
 
 ##### Using `curl`
@@ -84,9 +84,9 @@ $ curl -sSL -X GET \
        | python3 lovelace_migrate.py -
 ```
 
-***Note:** When using a file or `stdin` as input, the default name for the
-Lovelove UI will be set to **Home**. You can override this using the [`-n` (or
-`--name`) argument][arg-name].*
+***Note:** When using a file or `stdin` as input, the default title for the
+Lovelove UI will be set to **Home**. You can override this using the [`-t` (or
+`--title`) argument][arg-title].*
 
 ### Arguments
 #### Quick reference table
@@ -94,7 +94,7 @@ Lovelove UI will be set to **Home**. You can override this using the [`-n` (or
 |Short|Long        |Default|Description                                       |
 |-----|------------|-------|--------------------------------------------------|
 |`-h` |`--help`    |       |show this help message and exit                   |
-|`-n` |`--name`    |`auto` |name to give the Lovelace UI                      |
+|`-t` |`--title`   |`Home` |title of the Lovelace UI                          |
 |`-p` |`--password`|       |Home Assistant API password                       |
 |     |`<api-url>` |       |Home Assistant API URL (ending with `/api`)       |
 |     |`<file>`    |       |local JSON file containing dump from `/api/states`|
@@ -102,11 +102,9 @@ Lovelove UI will be set to **Home**. You can override this using the [`-n` (or
 #### `-h`, `--help`
 This argument will show the usage help and immediately exit.
 
-#### `-n`, `--name`
-This is the name that you wish to be set for the Lovelace UI. If using an API
-URL, this will attempt to be loaded from [`/api/config`][api-config]. If it
-cannot be loaded automatically via the API URL, or it is not specified when
-using a file or `stdin` as the configuration, the default is **Home**.
+#### `-t`, `--title`
+This is the title that you wish to be set for the Lovelace UI. The default
+is **Home**.
 
 #### `-p`, `--password`
 Home Assistant API password. If this argument is enabled without specifying a
@@ -127,9 +125,8 @@ the same format as the data from [`/api/states`][api-states].
 
 ***Note:** Use `-` as the `<api-url|file>` to load configuration from `stdin`.
 
-[api-config]: https://developers.home-assistant.io/docs/en/external_api_rest.html#get-api-config
 [api-states]: https://developers.home-assistant.io/docs/en/external_api_rest.html#get-api-states
-[arg-name]: #-n---name
+[arg-title]: #-t---title
 [arg-pass]: #-p---password
 [http-component]: https://www.home-assistant.io/components/http/
 [using-cat]: #using-cat
