@@ -2,8 +2,14 @@
 Lovelace UI module and migration tool for Python
 
 ## Requirements
+- pip3
 - PyYAML
 - requests
+
+On Raspbian Stretch `pip3` is not installed by default. To install `pip3`, run:
+```shell
+$ sudo apt-get install python3-pip
+```
 
 After you clone this repository, you can run:
 ```shell

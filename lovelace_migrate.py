@@ -187,8 +187,8 @@ class Lovelace(LovelaceBase):
             for entity_id in group['attributes'].get('entity_id', []):
                 config = entities.get(entity_id)
                 if config is None:
-                    _LOGGER.error("Entity not found: {}"
-                                  "".format(entity_id))
+                    _LOGGER.warning("Entity not found: {}"
+                                    "".format(entity_id))
                     continue
 
                 card = Lovelace.Card.from_config(config)
@@ -265,8 +265,8 @@ class Lovelace(LovelaceBase):
             for entity_id in group['attributes'].get('entity_id', []):
                 config = entities.get(entity_id)
                 if config is None:
-                    _LOGGER.error("Entity not found: {}"
-                                  "".format(entity_id))
+                    _LOGGER.warning("Entity not found: {}"
+                                    "".format(entity_id))
                     continue
 
                 card = Lovelace.Card.from_config(config)
@@ -552,6 +552,21 @@ class Lovelace(LovelaceBase):
         if 'default_view' in views:
             self.add_view(Lovelace.View.from_config(
                 views.pop('default_view')))
+        else:
+            view = Lovelace.View(title='Home')
+
+            for domain in Lovelace.CARD_DOMAINS.keys():
+                for e in states.get(domain, {}).values():
+                    if (domain == 'group' and
+                            e['attributes'].get('view', False)):
+                        continue
+
+                    card = Lovelace.Card.from_config(e)
+                    if card is not None:
+                        view.add_card(card)
+
+            if view.get('cards') is not None:
+                self.add_view(view)
 
         for view in views.values():
             self.add_view(Lovelace.View.from_config(view))
