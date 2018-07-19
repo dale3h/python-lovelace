@@ -44,6 +44,12 @@ parser.add_argument(
 # Parse the args
 args = parser.parse_args()
 
+if (args.input == '-' and (
+    args.password.lower().startswith('http://') or
+        args.password.lower().startswith('https://'))):
+    args.input = args.password
+    args.password = None
+
 
 def dd(msg=None, j=None, *args):
     if j is None and len(args) == 0:
