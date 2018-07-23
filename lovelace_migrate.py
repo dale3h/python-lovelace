@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 import json
+import os
 
 from collections import OrderedDict
 from getpass import getpass
@@ -23,7 +24,7 @@ parser = argparse.ArgumentParser(
 
 # Positional arguments
 parser.add_argument(
-    'input', metavar='<api-url|file>', nargs='?', default='-',
+    'input', metavar='<api-url|file>', nargs='?',
     help="Home Assistant REST API URL or states JSON file")
 
 # Optional arguments
@@ -44,11 +45,19 @@ parser.add_argument(
 # Parse the args
 args = parser.parse_args()
 
-if (args.input == '-' and (
-    args.password.lower().startswith('http://') or
-        args.password.lower().startswith('https://'))):
-    args.input = args.password
-    args.password = None
+# Input was not provided, so we need to check a few other things
+if args.input is None:
+    if args.password:
+        # User expects a password prompt
+        args.input = args.password
+        args.password = None
+    elif os.getenv('HASSIO_TOKEN') is not None:
+        # Script is running in Hass.io environment
+        args.input = 'http://hassio/homeassistant/api'
+        args.password = os.getenv('HASSIO_TOKEN')
+    else:
+        # Other defaults were not found
+        args.input = 'http://localhost:8123/api'
 
 
 def dd(msg=None, j=None, *args):
@@ -186,24 +195,18 @@ class Lovelace(LovelaceBase):
             if not group['attributes'].get('view', False):
                 return None
 
-            view = cls(title=friendly_name(group),
+            view = cls(title=group['attributes'].get('friendly_name'),
                        icon=group['attributes'].get('icon'))
             cards, nocards = [], []
 
-            for entity_id in group['attributes'].get('entity_id', []):
-                config = entities.get(entity_id)
-                if config is None:
-                    _LOGGER.warning("Entity not found: {}"
-                                    "".format(entity_id))
-                    continue
-
-                card = Lovelace.Card.from_config(config)
+            for entity in group.get('entities', {}).values():
+                card = Lovelace.Card.from_config(entity)
                 if type(card) is list:
                     cards.extend(card)
                 elif card is not None:
                     cards.append(card)
                 else:
-                    nocards.append(entity_id)
+                    nocards.append(entity['entity_id'])
 
             if len(nocards):
                 cards = [Lovelace.EntitiesCard(entities=nocards)] + cards
@@ -223,7 +226,7 @@ class Lovelace(LovelaceBase):
             if cls is not Lovelace.Card:
                 return super().from_config(config)
 
-            entity_id, domain, _ = eid(config)
+            domain = config['domain']
             if domain in Lovelace.CARD_DOMAINS:
                 cls = Lovelace.CARD_DOMAINS[domain]
                 return cls.from_config(config)
@@ -268,23 +271,17 @@ class Lovelace(LovelaceBase):
             control = group['attributes'].get('control') != 'hidden'
             cards, nocards = [], []
 
-            for entity_id in group['attributes'].get('entity_id', []):
-                config = entities.get(entity_id)
-                if config is None:
-                    _LOGGER.warning("Entity not found: {}"
-                                    "".format(entity_id))
-                    continue
-
-                card = Lovelace.Card.from_config(config)
+            for entity in group.get('entities', {}).values():
+                card = Lovelace.Card.from_config(entity)
                 if type(card) is list:
                     cards.extend(card)
                 elif card is not None:
                     cards.append(card)
                 else:
-                    nocards.append(entity_id)
+                    nocards.append(entity['entity_id'])
 
             if len(nocards):
-                primary = cls(title=friendly_name(group),
+                primary = cls(title=group['attributes'].get('friendly_name'),
                               show_header_toggle=control,
                               entities=nocards)
                 return [primary] + cards
@@ -339,7 +336,7 @@ class Lovelace(LovelaceBase):
         @classmethod
         def from_history_graph_config(cls, config):
             """Build the card from `history_graph` config."""
-            return cls(title=friendly_name(config),
+            return cls(title=config['attributes'].get('friendly_name'),
                        hours_to_show=config['attributes'].get('hours_to_show'),
                        refresh_interval=config['attributes'].get('refresh'),
                        entities=config['attributes']['entity_id'])
@@ -440,7 +437,7 @@ class Lovelace(LovelaceBase):
         @classmethod
         def from_camera_config(cls, config):
             """Build the card from `camera` config."""
-            return cls(title=friendly_name(config=config),
+            return cls(title=config['attributes'].get('friendly_name'),
                        entity=config['entity_id'],
                        camera_image=config['entity_id'],
                        show_info=True,
@@ -543,13 +540,16 @@ class Lovelace(LovelaceBase):
         },
     }
 
-    def __init__(self, states, title=None):
+    def __init__(self, states_json, title=None):
         """Convert existing Home Assistant config to Lovelace UI."""
         self.key_order = ['title', 'resources', 'excluded_entities',
                           '...', 'views']
         super().__init__()
 
         self['title'] = title or "Home"
+
+        # Build states and entities objects from the states JSON
+        self._states = states = self.build_states(states_json)
 
         groups = states.get('group', {})
         views = {k: v for k, v in groups.items()
@@ -588,6 +588,75 @@ class Lovelace(LovelaceBase):
     def add_view(self, view):
         """Add a view to the UI."""
         return self.add_item('views', view)
+
+    def build_states(self, states_json):
+        """Build a states object from states JSON."""
+        all_entities = self.build_entities(states_json)
+        states = {}
+
+        for e in all_entities.values():
+            if 'entity_id' in e['attributes']:
+                e['entities'] = {}
+                for x in e['attributes']['entity_id']:
+                    if x in all_entities:
+                        e['entities'].update({
+                            x: all_entities[x]
+                        })
+
+            if e['domain'] not in states:
+                states[e['domain']] = {}
+
+            states[e['domain']].update({
+                e['object_id']: e
+            })
+
+        return states
+
+    def build_entities(self, states_json):
+        """Build a list of entities from states JSON."""
+        entities = {}
+
+        for e in states_json:
+            # Add domain and object_id
+            e['domain'], e['object_id'] = e['entity_id'].split('.', 1)
+
+            # Add name from `friendly_name` or build from `object_id`
+            e['attributes']['friendly_name'] = e['attributes'].get(
+                'friendly_name', e['object_id'].replace('_', ' ').title())
+
+            # Add entity to the entities object
+            entities[e['entity_id']] = e
+
+        return entities
+
+    def dump(self):
+        """Dump YAML for the Lovelace UI."""
+        def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwargs):
+            """YAML dumper for OrderedDict."""
+
+            class OrderedDumper(Dumper):
+                """Wrapper class for YAML dumper."""
+
+                def ignore_aliases(self, data):
+                    """Disable aliases in YAML dump."""
+                    return True
+
+                def increase_indent(self, flow=False, indentless=False):
+                    """Increase indent on YAML lists."""
+                    return super(OrderedDumper, self).increase_indent(
+                        flow, False)
+
+            def _dict_representer(dumper, data):
+                """Function to represent OrderDict and derivitives."""
+                return dumper.represent_mapping(
+                    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+                    data.items())
+
+            OrderedDumper.add_multi_representer(OrderedDict, _dict_representer)
+            return yaml.dump(data, stream, OrderedDumper, **kwargs)
+
+        return ordered_dump(self, Dumper=yaml.SafeDumper,
+                            default_flow_style=False).strip()
 
 
 class HomeAssistantAPI(object):
@@ -641,86 +710,9 @@ class HomeAssistantAPI(object):
         return request.json()
 
 
-def build_states(states_dump):
-    """Build a list of domains/entities from states JSON."""
-    states = {}
-    for entity in states_dump:
-        entity_id, domain, object_id = eid(entity['entity_id'])
-        if domain not in states:
-            states[domain] = {}
-        states[domain][object_id] = entity
-    return states
-
-
-def get_entities(states):
-    """Build a list of entities from states JSON."""
-    entities = {}
-    for e in states:
-        entities[e['entity_id']] = e
-    return entities
-
-
-def eid(entity_id=None, config=None):
-    """Get entity_id parts from entity_id or config."""
-    if entity_id is None and config is None:
-        return None, None, None
-
-    if hasattr(config, 'get'):
-        entity_id = config.get('entity_id')
-    elif hasattr(entity_id, 'get'):
-        entity_id = entity_id.get('entity_id')
-
-    domain, object_id = entity_id.split('.', 1)
-    return entity_id, domain, object_id
-
-
-def friendly_name(object_id=None, entity_id=None, config=None):
-    """Generate a friendly name from object ID, entity ID, or config."""
-    if type(object_id) is dict:
-        config = object_id
-        object_id = None
-
-    if config is not None:
-        try:
-            return config['attributes']['friendly_name']
-        except KeyError:
-            entity_id = config.get('entity_id')
-
-    if entity_id is not None:
-        object_id = entity_id.split('.', 1)[1]
-
-    return object_id.replace('_', ' ').title()
-
-
-def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwargs):
-    """YAML dumper for OrderedDict."""
-
-    class OrderedDumper(Dumper):
-        """Wrapper class for YAML dumper."""
-
-        def ignore_aliases(self, data):
-            """Disable aliases in YAML dump."""
-            return True
-
-        def increase_indent(self, flow=False, indentless=False):
-            """Increase indent on YAML lists."""
-            return super(OrderedDumper, self).increase_indent(flow, False)
-
-    def _dict_representer(dumper, data):
-        """Function to represent OrderDict and derivitives."""
-        return dumper.represent_mapping(
-            yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-            data.items())
-
-    OrderedDumper.add_multi_representer(OrderedDict, _dict_representer)
-    return yaml.dump(data, stream, OrderedDumper, **kwargs)
-
-
 def main():
     """Main program function."""
     global args
-    global domains
-    global entities
 
     if args.debug:
         log_level = logging.DEBUG
@@ -748,19 +740,29 @@ def main():
     # Detect input source (file, API URL, or - [stdin])
     if args.input == '-':
         # Input is stdin
-        input = json.load(sys.stdin)
+        _LOGGER.debug("Reading input from stdin")
+        if not sys.stdin.isatty():
+            states_json = json.load(sys.stdin)
+        else:
+            _LOGGER.error("Cannot read input from stdin")
+            return 1
     elif (args.input.lower().startswith('http://') or
           args.input.lower().startswith('https://')):
         # Input is API URL
+        _LOGGER.debug("Reading input from URL: {}".format(args.input))
         hass = HomeAssistantAPI(args.input, args.password)
-
-        # Get states JSON dump from REST API
-        input = hass.get_states()
+        try:
+            states_json = hass.get_states()
+        except requests.exceptions.ConnectionError:
+            _LOGGER.error("Could not connect to API URL: "
+                          "{}".format(args.input))
+            return 1
     else:
         # Input is file
+        _LOGGER.debug("Reading input from file: {}".format(args.input))
         try:
             with open(args.input, 'r') as f:
-                input = json.load(f)
+                states_json = json.load(f)
         except FileNotFoundError:
             _LOGGER.error("{}: No such file".format(args.input))
             return 1
@@ -768,18 +770,11 @@ def main():
             _LOGGER.error("{}: Permission denied".format(args.input))
             return 1
 
-    # Build a states object from the input
-    states = build_states(input)
-    # @todo Find a way for `entities` to not be global
-    entities = get_entities(input)
-
     # Convert to Lovelace UI
-    lovelace = Lovelace(states, title=args.title)
-    dump = ordered_dump(lovelace, Dumper=yaml.SafeDumper,
-                        default_flow_style=False)
+    lovelace = Lovelace(states_json, title=args.title)
 
     # Output Lovelace YAML to stdout
-    print(dump.strip())
+    print(lovelace.dump())
 
     # Return with a normal exit code
     return 0
