@@ -23,10 +23,19 @@ $ pip3 install "requests>=2.14.2" "pyyaml>=3.11,<4"
 
 ### Usage
 ```shell
-$ python3 lovelace_migrate.py [-h] [-t <title>] [-p [<password>]] [<api-url|file>]
+$ python3 lovelace_migrate.py [-h] [-o <file>] [-p [<password>]] [-t <title>]
+                              [--debug] [--dry-run]
+                              [<api-url|file>]
 ```
 
 ### Examples
+#### Hass.io
+If you're running Hass.io, you can run the script with the Community SSH add-on.
+
+```shell
+$ python3 lovelace_migrate.py -o /config/ui-lovelace.yaml
+```
+
 #### Prompt for Password (Recommended)
 You will be prompted to enter your API password if you use [`-p`][arg-pass]
 without specifying a password.
@@ -70,15 +79,12 @@ A local JSON file can be used as the configuration input.
 $ python3 lovelace_migrate.py -t Home states.json
 ```
 
-***Note:** Loading from file is currently not implemented. For a temporary
-workaround, please see [Using `cat`][using-cat].*
-
 #### Use Contents of `stdin`
 You can even use the contents of `stdin` as the configuration for the script:
 
 ##### Using `cat`
 ```shell
-$ cat .data/entities.json | python3 lovelace_migrate.py -t Home -
+$ cat entities.json | python3 lovelace_migrate.py -t Home -
 ```
 
 ##### Using `curl`
@@ -90,31 +96,41 @@ $ curl -sSL -X GET \
        | python3 lovelace_migrate.py -
 ```
 
-***Note:** When using a file or `stdin` as input, the default title for the
-Lovelove UI will be set to **Home**. You can override this using the [`-t` (or
-`--title`) argument][arg-title].*
-
 ### Arguments
 #### Quick reference table
 
-|Short|Long        |Default|Description                                       |
-|-----|------------|-------|--------------------------------------------------|
-|`-h` |`--help`    |       |show this help message and exit                   |
-|`-t` |`--title`   |`Home` |title of the Lovelace UI                          |
-|`-p` |`--password`|       |Home Assistant API password                       |
-|     |`<api-url>` |       |Home Assistant API URL (ending with `/api`)       |
-|     |`<file>`    |       |local JSON file containing dump from `/api/states`|
+|Short|Long        |Default           |Description                                       |
+|-----|------------|------------------|--------------------------------------------------|
+|`-h` |`--help`    |                  |show this help message and exit                   |
+|`-o` |`--output`  |`ui-lovelace.yaml`|write output to `<file>`                          |
+|`-p` |`--password`|Detect/Prompt     |Home Assistant API password                       |
+|`-t` |`--title`   |`Home`            |title of the Lovelace UI                          |
+|     |`--debug`   |                  |set log level to DEBUG                            |
+|     |`--dry-run` |                  |do not write to output file                       |
+|     |`<api-url>` |                  |Home Assistant API URL (ending with `/api`)       |
+|     |`<file>`    |                  |local JSON file containing dump from `/api/states`|
 
 #### `-h`, `--help`
 This argument will show the usage help and immediately exit.
+
+#### `-o`, `--output`
+The Lovelace UI YAML output will be written to this file. A backup will
+automatically be created.
+
+#### `-p`, `--password`
+Home Assistant API password. If this argument is enabled without specifying a
+password, you will be prompted to enter your password.
 
 #### `-t`, `--title`
 This is the title that you wish to be set for the Lovelace UI. The default
 is **Home**.
 
-#### `-p`, `--password`
-Home Assistant API password. If this argument is enabled without specifying a
-password, you will be prompted to enter your password.
+#### `--debug`
+Enabling this allows you to see more specific logging output.
+
+#### `--dry-run`
+No files are written to/moved when this argument is enabled. Instead, the
+Lovelace UI YAML is output to the console.
 
 #### `<api-url|file>`
 ##### `<api-url>`

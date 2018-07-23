@@ -1,8 +1,6 @@
 """
 Migration tool for Home Assistant Lovelace UI.
 """
-# @todo Decide whether or not to use monster-card for `all_xxxx` groups.
-
 import argparse
 import logging
 import sys
@@ -44,7 +42,7 @@ parser.add_argument(
     help="set log level to DEBUG")
 parser.add_argument(
     '--dry-run', action='store_true',
-    help="do not output to file")
+    help="do not write to output file")
 
 # Parse the args
 args = parser.parse_args()
